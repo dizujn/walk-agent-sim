@@ -1,0 +1,54 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<script src="https://unpkg.com/deck.gl@8.9.35/dist.min.js"></script>
+<style>
+ body{margin:0;font-family:sans-serif}
+ #map{position:absolute;inset:0}
+ #bar{position:absolute;left:10px;top:10px;z-index:2;background:rgba(255,255,255,.92);padding:8px 12px;border-radius:6px;font-size:14px;display:flex;gap:10px;align-items:center}
+ button{font-size:14px}
+</style></head>
+<body>
+<div id="map"></div>
+<div id="bar">
+  <button id="play">⏸</button><button id="reset">처음부터</button>
+  <span>시뮬레이션 시각 <b id="clock">0분</b></span>
+  <span>배속 <select id="spd"><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select></span>
+  <span style="color:#666">__LABEL__</span>
+</div>
+<script>
+const LINKS=__LINKS__, TRIPS=__TRIPS__, DURATION=__DURATION__, SCALE=__SCALE__, CENTER=__CENTER__;
+const ptr=new Int32Array(TRIPS.length);
+let t=0, playing=true, last=performance.now();
+const pos=TRIPS.map(p=>[p[0][0],p[0][1]]);
+
+function update(){
+  for(let i=0;i<TRIPS.length;i++){
+    const p=TRIPS[i]; let k=ptr[i];
+    if(t<p[k][2]) k=0;
+    while(k<p.length-2 && p[k+1][2]<=t) k++;
+    ptr[i]=k;
+    const a=p[k], b=p[Math.min(k+1,p.length-1)];
+    const f=b[2]>a[2]?Math.min(1,Math.max(0,(t-a[2])/(b[2]-a[2]))):0;
+    pos[i][0]=a[0]+(b[0]-a[0])*f; pos[i][1]=a[1]+(b[1]-a[1])*f;
+  }
+}
+const osm=new deck.TileLayer({id:'osm',data:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',minZoom:0,maxZoom:19,tileSize:256,
+  renderSubLayers:pr=>{const {west,south,east,north}=pr.tile.bbox;
+    return new deck.BitmapLayer(pr,{data:null,image:pr.data,bounds:[west,south,east,north],opacity:0.5});}});
+const net=new deck.PathLayer({id:'net',data:LINKS,getPath:d=>d,getColor:[90,110,140],getWidth:2,widthUnits:'pixels'});
+const dg=new deck.DeckGL({container:'map',initialViewState:{longitude:CENTER[0],latitude:CENTER[1],zoom:15},controller:true});
+let frame=0;
+function draw(){
+  dg.setProps({layers:[osm,net,new deck.ScatterplotLayer({id:'agents',data:pos,getPosition:d=>d,getFillColor:[230,60,40],
+    getRadius:3,radiusUnits:'pixels',updateTriggers:{getPosition:frame}})]});
+  const m=Math.floor(t*SCALE/60); document.getElementById('clock').textContent=m+'분';
+}
+function loop(now){
+  const dt=(now-last)/1000; last=now;
+  if(playing){ t+=dt*parseFloat(document.getElementById('spd').value); if(t>DURATION){t=DURATION;playing=false;document.getElementById('play').textContent='▶';} }
+  update(); frame++; draw(); requestAnimationFrame(loop);
+}
+document.getElementById('play').onclick=e=>{ if(t>=DURATION) t=0; playing=!playing; e.target.textContent=playing?'⏸':'▶'; };
+document.getElementById('reset').onclick=()=>{ t=0; ptr.fill(0); playing=true; document.getElementById('play').textContent='⏸'; };
+requestAnimationFrame(loop);
+</script></body></html>
